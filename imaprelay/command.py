@@ -16,8 +16,8 @@ def main():
     if '-v' in sys.argv:
         log.setLevel(logging.DEBUG)
 
-    #    configfile = os.path.expanduser('~/.secret/imaprelay.json')
-    configfile = 'imaprelay.json'
+    #configfile = os.path.expanduser('~/.secret/imaprelay.json')
+    configfile = 'data/imaprelay.json'
 
     st = os.stat(configfile)
     if bool(st.st_mode & (stat.S_IRGRP | stat.S_IROTH)):
