@@ -1,12 +1,13 @@
 import email
+from email.mime.base import MIMEBase
 import imaplib
 import smtplib
 import socket
 import logging
 import time
 
-from .import util
-from .connection import make_imap_connection, make_smtp_connection
+import util
+from connection import make_imap_connection, make_smtp_connection
 
 log = logging.getLogger(__name__)
 
@@ -19,16 +20,23 @@ class IMAPError(RelayError):
     pass
 
 class Relay(object):
-    def __init__(self, to, inbox, archive):
-        self.to = to
-        self.inbox = inbox
-        self.archive = archive
+    def __init__(self, config):
+        self.config = config
+        self.inbox = config['relay']['inbox']
+        self.archive = config['relay']['archive']
+        self.sender = config['relay']['from']
 
     def relay(self):
         try:
             return self._relay()
         finally:
             self._close_connections()
+
+    def get_next_slice(self, filter):
+        data = self._chk(self.imap.search(None, filter))
+        msg_ids = [x for x in data[0].split() if x != '']
+        msg_slice, msg_ids = msg_ids[:BATCH_SIZE], msg_ids[BATCH_SIZE:]
+        return msg_slice
 
     def _relay(self):
         if not self._open_connections():
@@ -45,37 +53,39 @@ class Relay(object):
             raise RelayError('No "{0}" folder found! Where should I archive messages to?'.format(self.archive))
 
         data = self._chk(self.imap.select(self.inbox))
+        log.info('Relaying {num} messages from {inbox}'.format(num=data[0].decode('utf-8'), inbox=self.inbox))
 
-        log.info('Relaying {num} messages from {inbox}'.format(num=data[0], inbox=self.inbox))
-
-        # Take BATCH_SIZE messages and relay them
-        def get_next_slice():
-            data = self._chk(self.imap.search(None, 'ALL'))
-            msg_ids = [x for x in data[0].split(' ') if x != '']
-            msg_slice, msg_ids = msg_ids[:BATCH_SIZE], msg_ids[BATCH_SIZE:]
-            return msg_slice
-
-        msg_slice = get_next_slice()
-        while msg_slice:
-            self._relay_messages(msg_slice)
-            msg_slice = get_next_slice()
+        # Take max BATCH_SIZE messages for each recipient and relay them
+        for recipient in self.config['relay']['recipients']:
+            msg_slice = self.get_next_slice(recipient['filter'])
+            log.info('Relaying {num} messages for {recipient}'.format(num=len(msg_slice), recipient=recipient['name']))
+            while msg_slice:
+                self._relay_messages(msg_slice, recipient['to'])
+                msg_slice = self.get_next_slice(recipient['filter'])
 
         return True
 
-    def _relay_messages(self, message_ids):
+    def _relay_messages(self, message_ids, recipient):
         log.debug("Relaying messages {0}".format(message_ids))
 
         # Get messages and relay them
-        message_ids = ','.join(message_ids)
+        message_ids = b','.join(message_ids)
         msg_data = self._chk(self.imap.fetch(message_ids, '(RFC822)'))
 
         for response_part in msg_data:
             if isinstance(response_part, tuple):
-                eml = email.message_from_string(response_part[1])
-                res = self.smtp.sendmail(eml['from'], self.to, eml.as_string())
+                eml = email.message_from_string(response_part[1].decode('utf-8'))
+
+                # attach original message
+                #rfcmessage = MIMEBase("message", "rfc822")
+                #rfcmessage.attach(email.message_from_string(eml.as_string()))
+                #eml.attach(rfcmessage)
+                #eml['from'] = self.config['relay']['from']
+
+                res = self.smtp.sendmail(self.sender, recipient, eml.as_string())
 
                 log.debug("Sent message '{subj}' from {from_} to {to}".format(from_=eml['from'],
-                                                                              to=self.to,
+                                                                              to=recipient,
                                                                               subj=eml['subject']))
 
         # Copy messages to archive folder
@@ -87,7 +97,8 @@ class Relay(object):
         # Expunge
         self._chk(self.imap.expunge())
 
-    def loop(self, interval=30):
+    def loop(self):
+        interval = self.config['relay']['interval']
         try:
             while 1:
                 r = self.relay()
@@ -99,13 +110,13 @@ class Relay(object):
 
     def _open_connections(self):
         try:
-            self.imap = make_imap_connection()
+            self.imap = make_imap_connection(self.config['imap'])
         except (socket.error, imaplib.IMAP4.error):
             log.exception("Got IMAP connection error!")
             return False
 
         try:
-            self.smtp = make_smtp_connection()
+            self.smtp = make_smtp_connection(self.config['smtp'])
         except (socket.error, smtplib.SMTPException):
             log.exception("Got SMTP connection error!")
             return False
