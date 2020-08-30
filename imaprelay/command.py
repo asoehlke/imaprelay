@@ -26,9 +26,6 @@ def main():
                         % configfile)
     with open(configfile) as f:
         config = json.load(f)
-    log.info("Test")
-    print(config['imap']['hostname'])
-    log.info(config)
 
     rly = Relay(config)
 

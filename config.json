@@ -1,0 +1,11 @@
+{
+    "name": "Imap Relay",
+    "version": "1",
+    "slug": "imaprelay",
+    "description": "Relay catch-all mailbox to filtered recipients",
+    "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
+    "startup": "before",
+    "boot": "auto",
+    "options": {},
+    "schema": {}
+  }

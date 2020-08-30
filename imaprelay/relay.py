@@ -74,7 +74,7 @@ class Relay(object):
 
         for response_part in msg_data:
             if isinstance(response_part, tuple):
-                eml = email.message_from_string(response_part[1].decode('utf-8'))
+                eml = email.message_from_bytes(response_part[1])
 
                 # attach original message
                 #rfcmessage = MIMEBase("message", "rfc822")
