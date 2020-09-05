@@ -53,15 +53,16 @@ class Relay(object):
             raise RelayError('No "{0}" folder found! Where should I archive messages to?'.format(self.archive))
 
         data = self._chk(self.imap.select(self.inbox))
-        log.info('Relaying {num} messages from {inbox}'.format(num=data[0].decode('utf-8'), inbox=self.inbox))
+        if (data[0] != b'0'):
+            log.info('Relaying {num} messages from {inbox}'.format(num=data[0].decode('utf-8'), inbox=self.inbox))
 
-        # Take max BATCH_SIZE messages for each recipient and relay them
-        for recipient in self.config['relay']['recipients']:
-            msg_slice = self.get_next_slice(recipient['filter'])
-            log.info('Relaying {num} messages for {recipient}'.format(num=len(msg_slice), recipient=recipient['name']))
-            while msg_slice:
-                self._relay_messages(msg_slice, recipient['to'])
+            # Take max BATCH_SIZE messages for each recipient and relay them
+            for recipient in self.config['relay']['recipients']:
                 msg_slice = self.get_next_slice(recipient['filter'])
+                while msg_slice:
+                    log.info('Relaying {num} messages for {recipient}'.format(num=len(msg_slice), recipient=recipient['name']))
+                    self._relay_messages(msg_slice, recipient['to'])
+                    msg_slice = self.get_next_slice(recipient['filter'])
 
         return True
 
@@ -99,11 +100,13 @@ class Relay(object):
 
     def loop(self):
         interval = self.config['relay']['interval']
+        log.info('Start relaying from {0}'.format(self.config['imap']['username']))
+
         try:
             while 1:
                 r = self.relay()
                 t = interval if r else interval * 10
-                log.info("Sleeping for %d seconds", t)
+                log.debug("Sleeping for %d seconds", t)
                 time.sleep(t)
         except KeyboardInterrupt:
             log.warn("Caught interrupt, quitting!")
@@ -124,7 +127,7 @@ class Relay(object):
         return True
 
     def _close_connections(self):
-        log.info('Closing connections')
+        log.debug('Closing connections')
 
         try:
             self.imap.close()
