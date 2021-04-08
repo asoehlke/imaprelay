@@ -1,9 +1,11 @@
 import email
 from email.mime.base import MIMEBase
+from email import policy
 import imaplib
 import smtplib
 import socket
 import logging
+import re
 import time
 
 import util
@@ -24,7 +26,9 @@ class Relay(object):
         self.config = config
         self.inbox = config['relay']['inbox']
         self.archive = config['relay']['archive']
-        self.sender = config['relay']['from']
+        self.errorfolder = config['relay']['error']
+        self.sender = config['relay']['sender']
+        self.from_ = config['relay']['from']
 
     def relay(self):
         try:
@@ -73,31 +77,85 @@ class Relay(object):
         message_ids = b','.join(message_ids)
         msg_data = self._chk(self.imap.fetch(message_ids, '(RFC822)'))
 
+        send_success = False
         for response_part in msg_data:
             if isinstance(response_part, tuple):
-                eml = email.message_from_bytes(response_part[1])
+                eml = email.message_from_bytes(response_part[1], policy=policy.default)
+                originalFrom = eml['from']
 
-                # attach original message
-                #rfcmessage = MIMEBase("message", "rfc822")
-                #rfcmessage.attach(email.message_from_string(eml.as_string()))
-                #eml.attach(rfcmessage)
-                #eml['from'] = self.config['relay']['from']
+                # make sure there is a reply-to
+                try:
+                    eml.replace_header('reply-to', eml['reply-to'])
+                except KeyError:
+                    eml['reply-to'] = eml['from']
 
-                res = self.smtp.sendmail(self.sender, recipient, eml.as_string())
+                # replace sender address to avoid DMARC bounce, keep original name
+                fromAddress = re.sub('<.*>', "<{sender}>".format(sender=self.from_), originalFrom)
+                #fromAddress = "{orig}, Forwarder <{sender}>".format(orig=originalFrom, sender=self.from_)
+                eml.replace_header('from', fromAddress)
 
-                log.debug("Sent message '{subj}' from {from_} to {to}".format(from_=eml['from'],
+                try:
+                    eml.replace_header('sender', self.from_)
+                except KeyError:
+                    eml['sender'] = self.from_
+
+                try:
+                    self.smtp.sendmail(self.sender, recipient, eml.as_bytes())
+                    send_success=True
+                    log.debug("Sent message '{subj}' from {from_} to {to}".format(from_=eml['from'],
                                                                               to=recipient,
                                                                               subj=eml['subject']))
 
-        # Copy messages to archive folder
-        self._chk(self.imap.copy(message_ids, self.archive))
+                except Exception as err:
+                    log.error("Sent message '{subj}' from {from_} to {to} failed: {err}".format(from_=eml['from'],
+                                                                              to=recipient,
+                                                                              subj=eml['subject'],
+                                                                              err=err))
+                if not send_success:
+                    # might have been identified as spam, try with simple from
+                    eml.replace_header('from', self.sender)
+                    try:
+                        self.smtp.sendmail(self.sender, recipient, eml.as_bytes())
+                        send_success=True
+                        log.debug("Sent message '{subj}' from {from_} to {to}".format(from_=eml['from'],
+                                                                                to=recipient,
+                                                                                subj=eml['subject']))
+                    except Exception as err:
+                        log.error("Sent message '{subj}' from {from_} to {to} failed: {err}".format(from_=eml['from'],
+                                                                                to=recipient,
+                                                                                subj=eml['subject'],
+                                                                                err=err))
+
+                if not send_success:
+                    try:
+                        msg = email.message.EmailMessage()
+                        msg['from'] = self.sender
+                        msg['to'] = recipient
+                        msg['subject'] = "forward failed from {from_}: {subject}".format(from_=originalFrom, subject=eml['subject'])
+                        self.smtp.sendmail(self.sender, recipient, msg.as_bytes())
+                        log.debug("Sent error message from {from_} to {to} for {subj}".format(from_=originalFrom,
+                                                                                  to=recipient,
+                                                                                  subj=msg['subject']))
+                    except Exception as err:
+                        log.error("Sent error message from {from_} to {to} for {subj} failed: {err}".format(from_=originalFrom,
+                                                                             to=recipient,
+                                                                             subj=eml['subject'],
+                                                                             err=err))
+
+        if send_success:
+            # Copy messages to archive folder
+            self._chk(self.imap.copy(message_ids, self.archive))
+        else:
+            # Copy messages to error folder
+            self._chk(self.imap.copy(message_ids, self.errorfolder))
+            pass
 
         # Mark messages as deleted on server
         self._chk(self.imap.store(message_ids, '+FLAGS', r'(\Deleted)'))
 
         # Expunge
         self._chk(self.imap.expunge())
-
+            
     def loop(self):
         interval = self.config['relay']['interval']
         log.info('Start relaying from {0}'.format(self.config['imap']['username']))
