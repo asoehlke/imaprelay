@@ -1,11 +1,19 @@
-imaprelay
-=========
+# imaprelay
 
 This program will look for a configuration file in ~/.secret/imaprelay.json -- its location 
 should indicate that it needs to contain plain-text passwords for IMAP and SMTP servers, 
 and thus the program will exit immediately if the file is group- or world-readable.
 
-The available configuration options are listed below::
+The recipient filter can use the criteria listed here: https://pypi.org/project/imap-tools/#search-criteria
+Only single key searches are supported.
+
+Forwarding mails can cause some spam related issues. *imaprelay* uses three approaches: 
+1. forward using the original sender 
+2. replace the sender email address with the "from" address in the configuration
+3. if the previous approaches fail, move the mail to the "error" folder and just send a notification email to the recipient. 
+
+The available configuration options are listed below:
+```
 {
     "imap": {
         "hostname": "imap.myserver.de",
@@ -33,16 +41,10 @@ The available configuration options are listed below::
             {
                 "name": "all",
                 "filter": "ALL",
-                "to": "andreas@myserver.de"
+                "to": "all-the-rest@myserver.de"
             }
         ]
     }
 }
+```
 
-Once you've written a config file, all you need to do is run::
-
-    imaprelay
-
-For verbose logging, use::
-
-    imaprelay -v
