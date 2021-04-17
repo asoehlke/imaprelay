@@ -8,8 +8,8 @@ import socket
 import time
 from email import policy
 
-from .connection import make_imap_connection, make_smtp_connection
-from .util import parse_folder_line
+from connection import make_imap_connection, make_smtp_connection
+from util import parse_folder_line
 
 log = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ import os
 import stat
 import sys
 
-from imaprelay.relay import Relay
+from relay import Relay
 
 logging.basicConfig(
     format="%(asctime)-15s  %(levelname)-8s  %(message)s", level=logging.INFO
