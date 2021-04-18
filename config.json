@@ -1,8 +1,9 @@
 {
   "name": "Imap Relay",
-  "version": "1.1",
+  "version": "0.1.1",
   "slug": "imaprelay",
-  "description": "Relay catch-all mailbox to filtered recipients",
+  "description": "Relay mailbox to filtered recipients",
+  "url": "https://github.com/asoehlke/imaprelay",
   "arch": [
     "armhf",
     "armv7",
@@ -10,7 +11,6 @@
     "amd64",
     "i386"
   ],
-  "startup": "before",
   "boot": "auto",
   "options": {
     "imap": {
@@ -29,15 +29,15 @@
       "archive": "Archive",
       "error": "Error",
       "from": "forwarder@myserver.de",
-      "sender": "catchall@myserver.de",
-      "recipients": [
-        {
-          "name": "all",
-          "filter": "ALL",
-          "to": "all-the-rest@myserver.de"
-        }
-      ]
-    }
+      "sender": "catchall@myserver.de"
+    },
+    "recipients": [
+      {
+        "name": "all",
+        "filter": "ALL",
+        "to": "all-the-rest@myserver.de"
+      }
+    ]
   },
   "schema": {
     "imap": {
@@ -51,19 +51,19 @@
       "password": "str"
     },
     "relay": {
-      "interval": "int(1,",
+      "interval": "int(1,)",
       "inbox": "str",
       "archive": "str",
       "error": "str",
       "from": "email",
-      "sender": "email",
-      "recipients": [
-        {
-          "name": "str",
-          "filter": "str",
-          "to": "email"
-        }
-      ]
-    }
+      "sender": "email"
+    },
+    "recipients": [
+      {
+        "name": "str",
+        "filter": "str",
+        "to": "email"
+      }
+    ]
   }
 }
